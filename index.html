@@ -594,7 +594,8 @@ function place(n) {
     addText(px, py - cell * 1.6, cs.length + '子とった！', '#ff9b3d', 0.9);
   }
   if (n.i + 1 === EAR) {
-    showBanner('黒127　耳赤の一手', 'これを見た幻庵の耳が赤くなったと伝わる', '#ff5a4a', 3.2);
+    // 最後の一手なら結果画面が出るまで出しっぱなし、途中（全局コース）なら盤面の邪魔にならないよう短く
+    showBanner('黒127　耳赤の一手', 'これを見た幻庵の耳が赤くなったと伝わる', '#ff5a4a', n === notes[notes.length - 1] ? 60 : 2);
     flash = {color: '255,60,40', born: performance.now()};
   }
   if (n.i + 1 === MOVES.length) showBanner('325手完　黒2目勝ち', '秀策の勝ち', '#ffd98a', 3);
@@ -639,6 +640,7 @@ function finish() {
   $('rFL').textContent = cnt.fast + ' / ' + cnt.late;
   $('rC').textContent = maxCombo + ' / ' + n;
   $('rMsg').innerHTML = (cnt.m === 0 ? 'フルコンボ！ ' : '') + 'あなたは耳赤の一局を ' + n + ' 手並べました。' +
+    (startIdx < EAR && startIdx + notes.length >= EAR ? '<br><span style="color:#ff7a6a">黒127「耳赤の一手」</span>：これを見た幻庵の耳が赤くなったと伝わる一手です。' : '') +
     (startIdx + notes.length < MOVES.length ? '<br>この一手の後、秀策が黒2目勝ちを収めます。' : '<br>結果は黒（秀策）の2目勝ちです。');
   $('cont').parentElement.classList.toggle('hidden', startIdx + notes.length >= MOVES.length);
   $('result').classList.remove('hidden');
