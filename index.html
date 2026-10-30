@@ -125,7 +125,8 @@ const WIN = {p: 0.11, g: 0.20, ok: 0.32};
 const LEAD = 2; // カウントイン（1手ぶんの区間 × 2）。1手ぶんの区間は常に4拍
 
 // ===== 音（Web Audio で合成） =====
-let ac = null, master = null, noiseBuf = null;
+// master＝曲の経路、fxBus＝効果音の経路（決めの一手で曲だけ一時的に下げられるよう分けている）
+let ac = null, master = null, fxBus = null, comp = null, noiseBuf = null;
 function initAudio() {
   if (!ac) {
     ac = new (window.AudioContext || window.webkitAudioContext)();
@@ -136,17 +137,43 @@ function initAudio() {
   if (master) master.disconnect();
   master = ac.createGain();
   master.gain.value = 0.55;
-  const comp = ac.createDynamicsCompressor();
+  comp = ac.createDynamicsCompressor();
   master.connect(comp); comp.connect(ac.destination);
+  if (fxBus) fxBus.disconnect();
+  fxBus = ac.createGain(); fxBus.gain.value = 0.55; fxBus.connect(comp);
   // ホールの残響（減衰するノイズをインパルス応答に使う）。豪華な層だけに掛ける
   verb = ac.createConvolver();
   const len = Math.floor(ac.sampleRate * 2.2), ir = ac.createBuffer(2, len, ac.sampleRate);
   for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3); }
   verb.buffer = ir;
-  const vg = ac.createGain(); vg.gain.value = 0.35; verb.connect(vg); vg.connect(master);
+  const vg = ac.createGain(); vg.gain.value = 0.35 * 0.55; verb.connect(vg); vg.connect(comp);
   return ac.resume();
 }
 let verb = null;
+// 効果音を効果音の経路で鳴らす
+function onBus(bus, fn) { const m = master; master = bus; try { fn(); } finally { master = m; } }
+const onFx = fn => onBus(fxBus, fn);
+// 最後の一手：BGMを止めて決めの音を大きく鳴らし、決めの音が鳴り終わるころ拍の区切りで曲の締めを鳴らす
+function finaleLast(grade) {
+  const now = ac.currentTime, old = master;
+  nextBar = bars.length; // ここから先の曲は鳴らさない（締めはここで鳴らす）
+  old.gain.cancelScheduledValues(now); old.gain.setValueAtTime(old.gain.value, now); old.gain.linearRampToValueAtTime(0.0001, now + 0.06);
+  setTimeout(() => old.disconnect(), 300);
+  master = ac.createGain(); master.gain.value = 0.55; master.connect(comp); // 締め用の新しい曲の経路
+  const loud = ac.createGain(); loud.gain.value = 0.95; loud.connect(comp);  // 決めの音は効果音より大きく
+  onBus(loud, () => sfxFinale(grade));
+  const lb = bars[bars.length - 2], q = lb.len / 4; // 最後の一手の小節と、その4分音符
+  let te = lb.t; while (te < now + 1.25) te += q;    // 決めの音が鳴り終わるころの、拍の区切り
+  trollEnding(te, q);
+  endTime = te + trollEndingLen(q) + 0.2;
+}
+// 曲の音量を一時的に下げる（depth倍まで下げ、hold秒保ってから back秒で戻す）
+function duckMusic(depth, hold, back) {
+  const g = master.gain, t = ac.currentTime, v = 0.55;
+  g.cancelScheduledValues(t); g.setValueAtTime(g.value, t);
+  g.linearRampToValueAtTime(v * depth, t + 0.03); g.setValueAtTime(v * depth, t + 0.03 + hold);
+  g.linearRampToValueAtTime(v, t + 0.03 + hold + back);
+}
 // 厚みのある音色：ローパス・アタック/リリース・デチューン・定位・残響量を指定できる
 function voice(t, m, dur, o = {}) {
   const {type = 'sawtooth', vol = 0.05, cut = 3000, att = 0.008, rel = 0.08, det = 0, pan = 0, wet = 0.25} = o;
@@ -322,16 +349,39 @@ function riser(t, dur, v) { // 「シューッ」と上がっていく音
   g.gain.linearRampToValueAtTime(0.0001, t + dur + 0.05);
   s.connect(f); f.connect(g); g.connect(master); s.start(t); s.stop(t + dur + 0.06);
 }
+// 曲の締め：ジャン・ジャン・ジャーン（ロ短調の主和音）。q は4分音符の長さ
+// 曲の締め：最高潮の編成・音色・テンポのまま、属和音→主和音（V→i）で終わる2小節。q は4分音符の長さ
+// 1小節目＝応答の旋律「ファ# ソ# ラ# シ ド# ラ# ド#ー」（下は嬰ヘ、少し短く切って粒立ちを出す）→ 2小節目＝ロ短調に全員で着地してシを長く伸ばす
+const trollEndingLen = q => 4 * q + 2.2;
+function trollEnding(t, q) {
+  const e = q / 2, s16 = q / 4;
+  let pos = 0;
+  for (const [p, d] of TROLL_B[0]) { // 旋律（最高潮のオクターブ重ね＋弦・金管）
+    const tt = t + pos * e, m = TROLL_LOW + p, du = d * e * 0.65;
+    for (const [, o, type, vol] of TROLL_OCT) tone(tt, m + o, o >= 24 ? du * 0.8 : du, type, vol);
+    ensemble(tt, m + 24, du, {vol: 0.026, cut: 3500, wet: 0.35, spread: 0.45});
+    ensemble(tt, m + 12, du, {vol: 0.03, cut: 2200, att: 0.015, wet: 0.3, spread: 0.2});
+    pos += d;
+  }
+  for (let i = 0; i < 8; i++) tone(t + i * e, 42 + (i % 2 ? 12 : 0), e * 0.6, 'triangle', i % 2 ? 0.22 : 0.3); // ベース（嬰ヘ）
+  for (let i = 1; i < 8; i += 2) for (const c of [7, 11, 14]) tone(t + i * e, 59 + c, e * 0.4, 'square', 0.016);
+  for (const c of [7, 11, 14]) ensemble(t, 59 + c, 4 * q * 0.85, {vol: 0.031, cut: 3000, att: q * 0.6, rel: 0.3, wet: 0.5, spread: 0.6});
+  for (let i = 0; i < 4; i++) kick(t + i * q, 0.7);
+  snare(t + q, 0.15); hat(t, 0.04); crash(t, 0.22);
+  for (let i = 0; i < 16; i++) hat(t + i * s16, 0.015);
+  for (let i = 0; i < 4; i++) { timpani(t + 3 * q + i * s16, 42, 0.2 + 0.08 * i); snare(t + 3 * q + i * s16, 0.08 + 0.05 * i); } // 最後の拍で盛り上げる
+  const t1 = t + 4 * q; // ロ短調に着地して長く伸ばす（着地は少し強め）
+  for (const [, o, type, vol] of TROLL_OCT) voice(t1, TROLL_LOW + o, 0.5, {type, vol: vol * 1.15, cut: 6000, att: 0.004, rel: 1.6, wet: 0.35});
+  for (const p of [59, 62, 66, 71]) ensemble(t1, p, 0.6, {vol: 0.03, cut: 3000, att: 0.01, rel: 1.6, wet: 0.5, spread: 0.6});
+  ensemble(t1, TROLL_LOW + 24, 0.6, {vol: 0.033, cut: 3500, att: 0.006, rel: 1.6, wet: 0.4, spread: 0.45});
+  for (const p of [35, 47]) voice(t1, p, 0.5, {type: 'triangle', vol: 0.33, cut: 2000, att: 0.004, rel: 1.4, wet: 0.2});
+  timpani(t1, 47, 0.9); kick(t1, 1.2); snare(t1, 0.2); crash(t1, 0.55);
+}
 function trollBar(k, t, len) {
   if (k < LEAD) return;
   const j = k - LEAD, n = totalNotes, e = len / 8, s16 = len / 16, q = len / 4;
   if (j >= n) {
-    if (j === n) { // ジャン・ジャン・ジャーン（ロ短調の主和音）
-      for (const [b, d, v] of [[0, 0.5, 0.8], [1, 0.5, 0.8], [2, 2.2, 1]]) {
-        for (const p of [35, 47, 59, 62, 66, 71, 74]) tone(t + b * q, p, q * d, p < 50 ? 'triangle' : 'sawtooth', (p < 50 ? 0.3 : 0.035) * v);
-        kick(t + b * q, v); crash(t + b * q, 0.4 * v);
-      }
-    }
+    if (j === n) trollEnding(t, q);
     return;
   }
   const prog = n > 1 ? j / (n - 1) : 1, st = trollStage(j, n), pk = trollPeak(prog);
@@ -504,7 +554,7 @@ function startGame(cont = false) {
       const b = bars[LEAD + Math.floor(k / mpb)], i = s0 + k, len = b.len / mpb;
       return {i, x, y, c: i % 2 === 0 ? 1 : 2, t: b.t + (k % mpb) * len, len, ok: Math.min(WIN.ok, len * 0.4)};
     });
-    endTime = bars[LEAD + nb].t + Math.max(2.5, 2.2 * bars[LEAD + nb].len);
+    endTime = bars[LEAD + nb].t + trollEndingLen(bars[LEAD + nb].len / 4) + 0.2; // 締めの2小節と余韻まで
     clearInterval(schedTimer); schedTimer = setInterval(scheduler, 25); scheduler();
     state = 'play';
     if (contRun) showBanner('128手目から　最後まで', '325手、黒2目勝ちの終局まで', '#ffd98a', bars[LEAD - 1].t - t0);
@@ -514,7 +564,14 @@ function startGame(cont = false) {
   document.getElementById('result').classList.add('hidden');
   document.getElementById('quit').classList.remove('hidden');
 }
-function stopAudio() { clearInterval(schedTimer); if (master) { master.disconnect(); master = null; } }
+function stopAudio(fade = 0) {
+  clearInterval(schedTimer);
+  if (!master) return;
+  const m = master; master = null;
+  if (!fade) { m.disconnect(); return; }
+  const t = ac.currentTime; m.gain.cancelScheduledValues(t); m.gain.setValueAtTime(m.gain.value, t); m.gain.linearRampToValueAtTime(0.0001, t + fade);
+  setTimeout(() => m.disconnect(), fade * 1000 + 100);
+}
 
 function showBanner(text, sub, color, dur = 2.2) { banner = {text, sub, color, born: performance.now(), dur: dur * 1000}; }
 function addText(x, y, text, color, size = 1) { texts.push({x, y, text, color, size, born: performance.now()}); }
@@ -532,7 +589,7 @@ function place(n) {
       }
       fx.push({ring: true, x: px, y: py, life: 1});
     }
-    sfxBoom(cs.length);
+    onFx(() => sfxBoom(cs.length));
     const [px, py] = gp(n.x, n.y);
     addText(px, py - cell * 1.6, cs.length + '子とった！', '#ff9b3d', 0.9);
   }
@@ -552,8 +609,9 @@ function judge(n, dt) {
   combo++; maxCombo = Math.max(maxCombo, combo);
   score += pts + Math.min(combo, 100) * 5;
   cursor++;
-  sfxStone(grade);
-  if (n.i + 1 === EAR || n === notes[notes.length - 1]) sfxFinale(grade);
+  onFx(() => sfxStone(grade));
+  if (n === notes[notes.length - 1]) finaleLast(grade);
+  else if (n.i + 1 === EAR) { onFx(() => sfxFinale(grade)); duckMusic(0.3, 0.5, 1.0); } // 途中の耳赤の一手：決めの音の間だけ曲を下げて目立たせる
   place(n);
   const [px, py] = gp(n.x, n.y);
   addText(px, py - cell * 0.9, grade, col);
@@ -562,14 +620,14 @@ function judge(n, dt) {
 }
 function miss(n) {
   cnt.m++; combo = 0; cursor++;
-  sfxMiss();
+  onFx(sfxMiss);
   place(n);
   const [px, py] = gp(n.x, n.y);
   addText(px, py - cell * 0.9, 'MISS', '#ff6b6b');
 }
 function finish() {
   state = 'result';
-  stopAudio();
+  stopAudio(0.5);
   document.getElementById('quit').classList.add('hidden');
   const n = cnt.p + cnt.g + cnt.o + cnt.m, acc = (cnt.p + cnt.g * 0.7 + cnt.o * 0.3) / n; // 続きからなら1手目からの通算
   const rank = acc >= 0.95 && cnt.m === 0 ? 'S' : acc >= 0.9 ? 'A' : acc >= 0.75 ? 'B' : acc >= 0.5 ? 'C' : 'D';
