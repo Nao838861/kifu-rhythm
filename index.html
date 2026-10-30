@@ -717,7 +717,7 @@ function draw(vt, now) {
     else if (beat >= 0) { label = 'READY'; ph = (x / 2) % 1; fs = Math.min(cell * 2.4, W / 4.5); }
     if (label) {
       g2.globalAlpha = 1 - ph; g2.font = `bold ${fs}px sans-serif`; g2.fillStyle = '#fff';
-      g2.lineWidth = 6; g2.strokeStyle = 'rgba(0,0,0,.6)';
+      g2.lineWidth = 6; g2.strokeStyle = 'rgba(0,0,0,.6)'; g2.textAlign = 'center'; g2.textBaseline = 'middle';
       g2.strokeText(label, W / 2, by + size / 2); g2.fillText(label, W / 2, by + size / 2); g2.globalAlpha = 1;
     }
   }
