@@ -340,10 +340,11 @@ const TROLL_LOW = 47; // シ（B2）：はじめはファゴットやチェロ�
 // 0:低い旋律だけ 1:＋刻み 2:＋1オクターブ上・バスドラ・和音 3:2オクターブで旋律・フィル
 // 4:＋さらに上・スネア 5:＋アルペジオ・ティンパニ 6:＋最低音・4つ打ち 7:＋最高音（ピッコロ）・最高潮
 // 盛り上がりの位置（曲全体に対する割合。耳赤まで＝127手のときの手数で書くと）
-// 豪華な層は45手目から入り始めて75手目でそろい、100手目で段階7（フル）・最大音量。そこから127手目までは最高潮が続く
-const TROLL_RICH_FROM = 44 / 126, TROLL_RICH_TO = 74 / 126, TROLL_FULL = 99 / 126;
-const trollPeak = prog => Math.min(1, prog / TROLL_FULL); // 0→1（100手目で1、以後は1のまま）
-const trollStage = (j, n) => { const pk = trollPeak(n > 1 ? j / (n - 1) : 1); return pk >= 1 ? 7 : 3 + Math.floor(pk * 4); }; // 最初から段階3（旋律が聞こえる厚み）で始める
+// 段階3で始め、9手目で4、24手目で5、49手目で6、74手目で段階7（フル）・最大音量。豪華な層は45手目から入り始めて74手目でそろう。そこから127手目までは最高潮が続く
+const TROLL_RICH_FROM = 44 / 126, TROLL_RICH_TO = 73 / 126, TROLL_FULL = 73 / 126;
+const TROLL_UPS = [8 / 126, 23 / 126, 48 / 126, 73 / 126]; // 段階4〜7に上がる位置（手目−1）
+const trollPeak = prog => Math.min(1, prog / TROLL_FULL); // 0→1（74手目で1、以後は1のまま）
+const trollStage = (j, n) => { const prog = n > 1 ? j / (n - 1) : 1; return 3 + TROLL_UPS.filter(u => prog >= u - 1e-9).length; };
 const TROLL_OCT = [ // [段階, オクターブ, 音色, 音量]
   [0, 0, 'triangle', 0.1], [1, 0, 'square', 0.05], [2, 12, 'triangle', 0.06], [3, 12, 'square', 0.045],
   [4, 24, 'square', 0.02], [5, 24, 'triangle', 0.04], [6, -12, 'triangle', 0.12], [7, 36, 'triangle', 0.02],
