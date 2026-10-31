@@ -343,10 +343,9 @@ const TROLL_LOW = 47; // シ（B2）：はじめはファゴットやチェロ�
 // 豪華な層は45手目から入り始めて75手目でそろい、100手目で段階7（フル）・最大音量。そこから127手目までは最高潮が続く
 const TROLL_RICH_FROM = 44 / 126, TROLL_RICH_TO = 74 / 126, TROLL_FULL = 99 / 126;
 const trollPeak = prog => Math.min(1, prog / TROLL_FULL); // 0→1（100手目で1、以後は1のまま）
-const trollStage = (j, n) => { const pk = trollPeak(n > 1 ? j / (n - 1) : 1); return pk >= 1 ? 7 : Math.floor(pk * 7); };
+const trollStage = (j, n) => { const pk = trollPeak(n > 1 ? j / (n - 1) : 1); return pk >= 1 ? 7 : 3 + Math.floor(pk * 4); }; // 最初から段階3（旋律が聞こえる厚み）で始める
 const TROLL_OCT = [ // [段階, オクターブ, 音色, 音量]
-  [0, 0, 'triangle', 0.1], [0, 12, 'triangle', 0.05], [1, 0, 'square', 0.05], // 最初から1オクターブ上も重ね、小さいスピーカーでも聞こえるように
-  [2, 12, 'triangle', 0.06], [3, 12, 'square', 0.045],
+  [0, 0, 'triangle', 0.1], [1, 0, 'square', 0.05], [2, 12, 'triangle', 0.06], [3, 12, 'square', 0.045],
   [4, 24, 'square', 0.02], [5, 24, 'triangle', 0.04], [6, -12, 'triangle', 0.12], [7, 36, 'triangle', 0.02],
 ];
 function riser(t, dur, v) { // 「シューッ」と上がっていく音
