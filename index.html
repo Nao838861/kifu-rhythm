@@ -126,7 +126,7 @@ const LEAD = 2; // カウントイン（1手ぶんの区間 × 2）。1手ぶん
 
 // ===== 音（Web Audio で合成） =====
 // master＝曲の経路、fxBus＝効果音の経路（決めの一手で曲だけ一時的に下げられるよう分けている）
-let ac = null, master = null, fxBus = null, comp = null, noiseBuf = null;
+let ac = null, master = null, fxBus = null, comp = null, noiseBuf = null, outGain = null;
 function initAudio() {
   if (!ac) {
     ac = new (window.AudioContext || window.webkitAudioContext)();
@@ -138,7 +138,14 @@ function initAudio() {
   master = ac.createGain();
   master.gain.value = 0.55;
   comp = ac.createDynamicsCompressor();
-  master.connect(comp); comp.connect(ac.destination);
+  // 全体の音量を持ち上げ、最後にリミッターで音割れを防ぐ（ノートPCの小さいスピーカーでも聞こえるように）
+  if (!outGain) {
+    const lim = ac.createDynamicsCompressor();
+    lim.threshold.value = -2; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.002; lim.release.value = 0.15;
+    outGain = ac.createGain(); outGain.gain.value = 3;
+    outGain.connect(lim); lim.connect(ac.destination);
+  }
+  master.connect(comp); comp.connect(outGain);
   if (fxBus) fxBus.disconnect();
   fxBus = ac.createGain(); fxBus.gain.value = 0.55; fxBus.connect(comp);
   // ホールの残響（減衰するノイズをインパルス応答に使う）。豪華な層だけに掛ける
@@ -385,7 +392,7 @@ function trollBar(k, t, len) {
     return;
   }
   const prog = n > 1 ? j / (n - 1) : 1, st = trollStage(j, n), pk = trollPeak(prog);
-  const v = 0.3 + 0.7 * pk;                      // だんだん大きく（100手目で最大）
+  const v = 0.45 + 0.55 * pk;                    // だんだん大きく（100手目で最大）
   const ph = trollPhrase(j), b = j % 4, mel = (ph === 'A' ? TROLL_A : TROLL_B)[b];
   const ch = TROLL_CHORD[ph][b], bass = TROLL_BASS[ph][b];
   const art = 0.45 + 0.35 * pk;                  // スタッカート→マルカート
@@ -648,6 +655,8 @@ function finish() {
 
 // ===== 入力 =====
 const nowJudge = aNow;
+// 画面の表示は描いてから実際に映るまで遅れるので、表示（輪・盤の光・カウントダウン）だけその分早めて音とそろえる
+const VISUAL_LEAD = 0.06;
 function hit(px, py) {
   if (state !== 'play') return;
   const n = notes[cursor];
